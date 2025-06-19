@@ -1,0 +1,385 @@
+Sage 50 Accounting—U.S. Edition 
+Software development kit  
+.NET API quick start guide 
+ 
+ 
+ 
+ 
+ 
+Table of contents 
+
+
+Changes in version 2024.0 .................................................................................................................. 4 
+Nonbreaking API changes between R2023.0 and R2024.0 ...................................................... 4 
+Breaking API changes between R2023.0 and R2024.0 ............................................................ 4 
+Deprecations ................................................................................................................................. 4 
+Fixed issues in R2024.0 ............................................................................................................... 4 
+Known issues in R2024.0 ............................................................................................................. 4 
+Overview ................................................................................................................................................ 6 
+Getting started ...................................................................................................................................... 7 
+Programming languages ...................................................................................................................... 8 
+Initial connection ................................................................................................................................. 10 
+Request access to company.............................................................................................................. 11 
+Open company .................................................................................................................................... 12 
+Sage 50 development partner program ............................................................................................ 14 
+Sage 50 SDK community ................................................................................................................... 15 
+ 
+
+Adding a reference............................................................................................................................ 8 
+Adding the namespace ..................................................................................................................... 9 
+Sample code...................................................................................................................................... 9 
+Sample code.................................................................................................................................... 10 
+Sample code.................................................................................................................................... 11 
+Sample code.................................................................................................................................... 12 
+Visual C# ......................................................................................................................................... 12 
+Overview .......................................................................................................................................... 14 
+Gold membership ............................................................................................................................ 14 
+Silver membership .......................................................................................................................... 14 
+Troubleshooting .............................................................................................................................. 15 
+Changes in version 2024.0 
+
+Note: In Release 2024.0 the .NET SDK targets the .NET 4.8 framework. 
+ 
+Nonbreaking API changes between R2023.0 and R2024.0 
+• New classes o <none> 
+
+
+
+
+
+ 
+• Changes to existing classes o <none> 
+
+
+
+
+
+ 
+Breaking API changes between R2023.0 and R2024.0 
+• Binary breaking changes o <none> 
+
+
+
+
+
+ 
+• Functional breaking changes o <none> 
+
+
+
+
+
+ 
+Deprecations 
+• <none> 
+
+
+ 
+Fixed issues in R2024.0 
+• <none> 
+
+
+ Known issues in R2024.0 
+• Transaction Creation/Modification Limitations: o Cash-basis Companies—the SDK cannot be used to create, edit, or delete Receipt, or Payment transactions that apply to Sales or Purchase Invoices in cash-basis companies. The SDK cannot be used to create, edit or delete Sales Invoices or Purchase Invoices in cash-basis companies. 
+
+o Serialized Inventory—the SDK cannot be used to create, edit, or delete Sales Invoice, Purchase Invoice, Receipt, or Payment transactions involving serialized inventory items. 
+
+o Retainage—the SDK cannot be used to create, edit, or delete Sales Invoice, Purchase Invoice, Receipt or Payment transactions involving retainage jobs. 
+
+o Unit of Measure—the SDK cannot be used to edit or delete transactions involving Units of Measure. 
+
+o Cross-Payments—the SDK cannot be used to edit or delete Receipts from a Vendor or Payments to a customer. 
+
+o Sales Invoices against Proposals—the SDK cannot be used to edit or delete Sales Invoices that apply against a proposal. 
+
+o Audit Trail entries are not generated for sales invoices generated through the SDK. 
+
+o Your application can only access one company at a time. 
+
+o There is no security model. If your application has access to a Sage 50 company, it will have access to all available areas of that company. 
+
+o There is no List method for contacts within Sage 50. 
+
+o Your application has to be compiled for 32 bit and use at least .NET 4.8. 
+
+o A company must have been opened in Sage 50 at least once in order for your application to connect to it. However, it does not need to be open at the time your application is trying to connect. 
+
+o Creating a Quote or Sales Order in a new company with no other AR transactions results in a validation error due to the default AR account not being populated. 
+
+o Applying payments to purchases where the payment has both invoices and expenses applied may cause the ‘Do you want to save message’ when viewing the payment in Sage 50. 
+
+
+
+
+
+Thank you for your interest in the Sage 50 Third Party Add-on Program. The Sage 50 Software Development Kit (SDK) exposes some of the new features in Sage 50 Accounting. This document is intended to be a Quick Start Guide for Third-Party developers interested in connecting their application with Sage 50 through the .NET API. The Sage 50 SDK includes many sample applications that expand on this Quick Start Guide. There is also a Sage 50 .NET API help file installed with the Sage 50 .NET SDK that explains each class property and method available. 
+The main focus of the Sage 50 .NET API is to allow for client applications to connect and activate methods without the need to launch the Sage 50 application. The .NET API offers a more object-oriented approach of interfacing with Sage 50. The .NET API makes use of Generics and LINQ expressions introduced in .NET Framework 2.0. The .NET API is available with Sage 50 versions 2011 and later.  
+The third-party application is allowed to connect to Sage 50 Accounting without the need for Sage 50 to be launched. The third-party application will create an instance of the PeachtreeSession object that calls a Begin method which takes an application ID as its String parameter. Each third-party application will be associated with a unique application ID provided by Sage. For developers who wish to test only with the sample companies installed with Sage 50 Accounting, an application ID is not necessary and may be passed as an empty String parameter in the Begin method of the PeachtreeSession object.  
+Once a developer has created an instance of the PeachtreeSession object, a variety of methods, properties, collections, and factory classes may be used to access company data. To open a company, the third-party application will use the RequestAccess method of the PeachtreeSession object and return an AuthorizationResult enumerator as the state of the request. If this is the first time the third-party application is attempting to open a company, the RequestAccess method will return a Pending status until the end user gives permission to allow the third-party application access to Sage 50 when prompted upon opening the company in Sage 50 Accounting. The VerifyAccess method is used to determine if access to the company you are requesting to open has already been given. 
+ 
+ Overview 
+
+After you install Sage 50, make sure you reboot your machine in order to get your app to build and work properly. As well, in order to use the .NET API, you need a reference in your Visual Studio project to the Sage.Peachtree.API assembly, which is in the install folder of Sage 50 and registered in the Global Assembly Cache (GAC) of Microsoft Windows. To start using the .NET API with a non-sample company, a valid application ID is needed. You should have received your application ID in an email after you downloaded the SDK. If not, or if you have questions about your application ID, send an email to sdk.50us@sage.com for assistance. If you use a blank application ID, you will only be able to connect to Sage 50 sample companies. 
+For the 2024.0 release of Sage 50, a variety of sample applications is provided in the Sage 50 SDK download package. Many of the sample applications extend the documentation to demonstrate areas beyond the scope of the SDK documentation. The SDK includes sample applications and documentation that was written for Visual Studio 2012. Many of the samples packaged with the Sage 50 SDK and code references in this document make use of Microsoft Visual Studio. A free version of the Visual Studio Community IDE can be downloaded at https://visualstudio.microsoft.com/free-developer-offers/ to evaluate the samples provided.  
+ Getting started 
+
+Adding a reference 
+For the 2024.0 release, the Sage 50 .NET API assembly is distributed as part of the Sage 50 Accounting 2024.0 installation. It is also registered in the Global Assembly Cache (GAC). The .NET API is tightly linked to the application and allows existing applications to function with minor changes. In order to use the .NET API, you will need to add a reference to the Sage.Peachtree.API assembly in your Visual Studio project:  
+ 
+ 
+
+To add a reference to the .NET API in your existing .NET client code, do the following: 
+1. Add Sage.Peachtree.API as a NET reference 
+
+2. Add the namespace Sage.Peachtree.API 
+
+3. Rebuild the .NET client application  
+
+
+ 
+Note: You can also reference the .NET API by manually browsing to the Sage.Peachtree.API.dll file in the API folder inside the install folder of Sage 50: Programming languages 
+
+ 
+
+ 
+Adding the namespace 
+The namespace of the .NET API is “Sage.Peachtree.API” and should be added to the .NET client application code. 
+ Sample code 
+Visual C# 
+ 
+
+
+ 
+
+
+ 
+Visual Basic 
+ 
+
+
+ 
+
+
+ 
+ 
+The PeachtreeSession class is the entry point of the Sage 50 .NET API. You must create a PeachtreeSession object must be created. The Begin method must be called passing in either a blank or valid application ID as a String parameter. If you enter a blank application ID, you will only be able to connect to Sage 50 sample companies. A valid application ID is needed in order to connect to regular Sage 50 companies (nonsample companies). To have a unique application ID generated for your third-party application, please send a request to sdk.50us@sage.com. 
+Sample code 
+Visual C# 
+ 
+
+
+
+
+
+
+
+ 
+
+
+ 
+Visual basic 
+ 
+
+
+
+
+
+
+
+ 
+
+
+ 
+ Initial connection 
+
+Request access to company 
+
+After the third-party application has begun a session with the Sage 50 program, it must first request access to the company it will open. To do this, the third-party application will call the RequestAccess method, which returns an enumerated value representing the state of the request. The request can be one of the following states: 
+Enu
+ Description 
+ 
+
+AuthorizationResult.CompanyLocked 
+ The company is locked in a single-user mode. No logons are permitted. This result does not indicate whether or not the logon was authorized. The target Company must be available in shared mode before login authorization can be determined. 
+ 
+AuthorizationResult.CorruptedOrTampered 
+ The API application has been denied access due to detection of corruption/tampering with authorization records in Sage 50. 
+ 
+AuthorizationResult.Denied 
+ The API application has been denied access by a Sage 50 user. 
+ 
+AuthorizationResult.Granted 
+ The API application has been granted access by a Sage 50 user. 
+ 
+AuthorizationResult.LoginRestricted 
+ Logon permission was granted, but it is temporarily restricted (typically by a Sage 50 administrator). 
+ 
+AuthorizationResult.NoCredentials 
+ Indicates that the API application requesting authorization has no credentials with the Company to authenticate against. 
+ 
+AuthorizationResult.None 
+ This represents no access attempted (an initialization value). 
+ 
+AuthorizationResult.Pending 
+ The API application is waiting on approval from a Sage 50 user. 
+ 
+
+
+ 
+Sample code 
+Visual C# 
+  
+
+
+
+ 
+
+
+ 
+Visual Basic 
+ 
+
+
+
+ 
+
+
+The following sample code demonstrates how to open a Sage 50 company using the .NET API. The third-party application will use the Open method of the PeachtreeSession class to access a company. The Open method returns a context to a Company class object which provides the primary connection point for a Sage 50 company. 
+Sample code 
+ 
+Visual C# 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+ Open company 
+
+Visual basic 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+ 
+ 
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+ 
+ 
+Overview 
+Participation in the Development partner program can increase your exposure to the vibrant small and midsized applications market. If you have an application that adds functional value to Sage 50, we encourage you to apply for Silver or Gold level program membership.  
+Gold membership 
+• An invitation to participate at our annual partner conference. Booth and sponsorship opportunity charges are separate from program fees and are outlined closer to the conference date. 
+
+• Marketing exposure on: www.sagepss.com 
+
+• Access to not-for-resale software to test your product integration 
+
+• Access to the Gold Development Partner Logo 
+
+• A Sage 50 SDK-specific support plan (five incidents) 
+
+• View full program requirements and benefits 
+
+
+ 
+Silver membership 
+• An invitation to participate at our annual partner conference. Booth and sponsorship opportunity charges are separate from program fees and are outlined closer to the conference date. 
+
+• Marketing exposure on: www.sagepss.com 
+
+• Access to not-for-resale software to test your product integration 
+
+• Access to the Silver Development Partner Logo 
+
+• A Sage 50 SDK-specific support plan (one incident) 
+
+• View full program requirements and benefits  
+
+
+ 
+ Sage 50 development partner program  
+
+In addition to the documentation and sample code provided in the Sage 50 SDK package, developers have access to the Sage 50 SDK Community where they can discuss the SDK with other developers using the Sage 50 SDK. Visit Sage City to set up your account.   
+ 
+Troubleshooting 
+1. If you get the following error message when you run your application:  
+
+
+“System.IO.FileLoadException was unhandled Message=Mixed mode assembly is built against version 'v2.0.50727' of the runtime and cannot be loaded in the 4.0 runtime without additional configuration information. Source=Sage.Peachtree.Domain”. 
+Resolution: Add the following snippet to your app.config. 
+<startup useLegacyV2RuntimeActivationPolicy="true"> 
+<supportedRuntime version="v2.0"/> 
+<supportedRuntime version="v4.0"/> 
+</startup 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+   Sage 50 SDK community 
