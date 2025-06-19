@@ -1,0 +1,389 @@
+# Sage 50 US SDK Containerized Deployment Plan for Google Cloud
+
+## Executive Summary
+
+This plan outlines the implementation strategy for deploying Sage 50 US SDK in a containerized environment on Google Cloud Platform. Due to the Windows-specific nature of Sage 50 and certain GCP limitations, we'll use Google Kubernetes Engine (GKE) with Windows Server containers as the primary deployment target.
+
+## Key Constraints and Considerations
+
+### Technical Limitations
+- **Cloud Run Limitation**: Cloud Run doesn't support Windows images, it only supports Linux based containers
+- **Windows Container Requirement**: Sage 50 US SDK is a .NET SDK that requires Windows Server containers
+- **Hyper-V Restrictions**: Google Cloud currently doesn't support Hyper-V and doesn't let you run Hyper-V containers. Therefore, you can only deploy Windows Server containers in Google Cloud
+- **SDK Access**: To gain access to the Sage 50 US SDK, please email developer@sage.com
+
+### Deployment Options
+**Recommended**: Google Kubernetes Engine (GKE) with Windows Server containers
+**Alternative**: Compute Engine with Windows Server VMs
+
+## Phase 1: Prerequisites and Setup
+
+### 1.1 Sage 50 SDK Access
+- Apply for Sage Developer Partnership at https://partnerhub.sage.com/?eid=1302
+- Request SDK access via developer@sage.com
+- Obtain the latest Sage 50 US SDK version compatible with your target Sage 50 installations
+
+### 1.2 Google Cloud Project Setup
+```bash
+# Enable required APIs
+gcloud services enable container.googleapis.com
+gcloud services enable compute.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+
+# Create Artifact Registry repository for Windows containers
+gcloud artifacts repositories create sage50-containers \
+    --repository-format=docker \
+    --location=us-central1 \
+    --description="Sage 50 SDK Windows containers"
+```
+
+### 1.3 Development Environment
+- Windows development machine with:
+  - Docker Desktop with Windows containers enabled
+  - Sage 50 SDK installed
+  - Visual Studio with .NET Framework support
+  - Google Cloud SDK
+
+## Phase 2: Container Image Development
+
+### 2.1 Base Image Selection
+Use Windows Server Core 2019 or 2022 as base image:
+```dockerfile
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+# or
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+```
+
+### 2.2 Dockerfile Strategy
+```dockerfile
+# Multi-stage build for Sage 50 SDK application
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2019 AS build
+WORKDIR /app
+
+# Copy and restore dependencies
+COPY *.csproj .
+COPY packages.config .
+RUN nuget restore
+
+# Copy source and build
+COPY . .
+RUN msbuild /p:Configuration=Release /p:OutputPath=c:\out\
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/framework/runtime:4.8-windowsservercore-ltsc2019
+WORKDIR /app
+
+# Install Sage 50 SDK components
+COPY --from=build /out .
+COPY sage50-sdk/ ./sage50-sdk/
+
+# Register COM components if required
+RUN regsvr32 /s sage50-sdk\Interop.PeachwServer.dll
+
+# Configure application
+EXPOSE 80
+EXPOSE 443
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
+  CMD powershell -command "try { Invoke-WebRequest -Uri http://localhost:80/health -TimeoutSec 10 -UseBasicParsing | Out-Null; exit 0 } catch { exit 1 }"
+
+ENTRYPOINT ["powershell", "-File", "start.ps1"]
+```
+
+### 2.3 Application Architecture Considerations
+- **ODBC vs SDK**: Using ODBC connections for querying data is faster, but we don't recommend using it for altering data as it can pose security risks
+- **SDK for Writes**: We suggest using the Sage 50 SDK, or a combination of the two
+- **Connection Management**: The ODBC connection also requires a Sage 50 login. We recommend creating a separate account for this
+
+## Phase 3: Google Kubernetes Engine Deployment
+
+### 3.1 GKE Cluster with Windows Support
+```bash
+# Create GKE cluster with Windows node pool
+gcloud container clusters create sage50-cluster \
+    --zone=us-central1-a \
+    --num-nodes=1 \
+    --enable-ip-alias \
+    --enable-autoscaling \
+    --min-nodes=1 \
+    --max-nodes=5
+
+# Add Windows Server node pool
+gcloud container node-pools create windows-pool \
+    --cluster=sage50-cluster \
+    --image-type=WINDOWS_LTSC_CONTAINERD \
+    --machine-type=e2-standard-4 \
+    --num-nodes=2 \
+    --zone=us-central1-a
+```
+
+### 3.2 Kubernetes Manifests
+```yaml
+# sage50-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sage50-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sage50-api
+  template:
+    metadata:
+      labels:
+        app: sage50-api
+    spec:
+      nodeSelector:
+        kubernetes.io/os: windows
+      containers:
+      - name: sage50-api
+        image: us-central1-docker.pkg.dev/[PROJECT-ID]/sage50-containers/sage50-api:latest
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        env:
+        - name: SAGE50_DB_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: sage50-config
+              key: database-path
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: sage50-data
+        persistentVolumeClaim:
+          claimName: sage50-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sage50-api-service
+spec:
+  selector:
+    app: sage50-api
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  - port: 443
+    targetPort: 443
+    name: https
+  type: LoadBalancer
+```
+
+### 3.3 Persistent Storage for Sage 50 Data
+```yaml
+# sage50-storage.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sage50-data-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: ssd
+```
+
+## Phase 4: Build and Deployment Pipeline
+
+### 4.1 Cloud Build Configuration
+```yaml
+# cloudbuild.yaml
+steps:
+# Build Windows container
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/sage50-containers/sage50-api:$BUILD_ID', '.']
+  
+# Push to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/sage50-containers/sage50-api:$BUILD_ID']
+
+# Deploy to GKE
+- name: 'gcr.io/cloud-builders/gke-deploy'
+  args:
+  - run
+  - --filename=k8s/
+  - --image=us-central1-docker.pkg.dev/$PROJECT_ID/sage50-containers/sage50-api:$BUILD_ID
+  - --location=us-central1-a
+  - --cluster=sage50-cluster
+```
+
+### 4.2 Automated Deployment Script
+```bash
+#!/bin/bash
+# deploy.sh
+
+# Build and push container
+gcloud builds submit --config cloudbuild.yaml .
+
+# Update Kubernetes deployment
+kubectl set image deployment/sage50-api \
+  sage50-api=us-central1-docker.pkg.dev/$PROJECT_ID/sage50-containers/sage50-api:latest
+
+# Wait for rollout
+kubectl rollout status deployment/sage50-api
+```
+
+## Phase 5: Security and Compliance
+
+### 5.1 Network Security
+- Configure VPC firewalls to restrict access
+- Use private GKE cluster for enhanced security
+- Implement Workload Identity for secure access to Google Cloud services
+
+### 5.2 Data Protection
+- Encrypt persistent volumes
+- Use Secret Manager for sensitive configuration
+- Implement backup strategy for Sage 50 data files
+
+### 5.3 Access Control
+```yaml
+# rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sage50-service-account
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sage50-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sage50-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: sage50-service-account
+roleRef:
+  kind: Role
+  name: sage50-role
+  apiGroup: rbac.authorization.k8s.io
+```
+
+## Phase 6: Monitoring and Observability
+
+### 6.1 Application Monitoring
+- Configure Google Cloud Monitoring for container metrics
+- Implement custom metrics for Sage 50 operations
+- Set up alerting for critical failures
+
+### 6.2 Logging Strategy
+```yaml
+# logging-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Log_Level     info
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*sage50*.log
+        Parser            docker
+        Tag               sage50.*
+    [OUTPUT]
+        Name  stackdriver
+        Match sage50.*
+```
+
+## Phase 7: Alternative: Compute Engine Deployment
+
+If GKE proves too complex, consider this simpler approach:
+
+### 7.1 Compute Engine with Container-Optimized Windows
+```bash
+# Create Windows Server instance with Docker
+gcloud compute instances create sage50-server \
+    --image-family=windows-2019-for-containers \
+    --image-project=windows-cloud \
+    --machine-type=e2-standard-4 \
+    --boot-disk-size=100GB \
+    --zone=us-central1-a \
+    --tags=http-server,https-server
+```
+
+### 7.2 Startup Script for Auto-deployment
+```powershell
+# startup.ps1
+# Pull and run Sage 50 container
+docker pull us-central1-docker.pkg.dev/PROJECT-ID/sage50-containers/sage50-api:latest
+docker run -d -p 80:80 -p 443:443 --name sage50-api \
+  -v C:\SageData:/app/data \
+  us-central1-docker.pkg.dev/PROJECT-ID/sage50-containers/sage50-api:latest
+```
+
+## Phase 8: Testing and Validation
+
+### 8.1 Integration Testing
+- Test all Sage 50 SDK operations (create, read, update, delete)
+- Validate data consistency between container and Sage 50 desktop
+- Performance testing under load
+
+### 8.2 Disaster Recovery Testing
+- Test backup and restore procedures
+- Validate high availability scenarios
+- Test scaling operations
+
+## Implementation Timeline
+
+**Week 1-2**: Prerequisites and SDK access
+**Week 3-4**: Container development and local testing
+**Week 5-6**: GKE cluster setup and initial deployment
+**Week 7-8**: Security implementation and monitoring setup
+**Week 9-10**: Testing and optimization
+**Week 11-12**: Production deployment and documentation
+
+## Cost Considerations
+
+- **GKE Windows nodes**: Higher cost than Linux nodes
+- **Persistent storage**: SSD storage for better performance
+- **Load balancer**: For external access
+- **Monitoring**: Cloud Operations suite costs
+
+## Success Metrics
+
+- Container startup time < 2 minutes
+- API response time < 500ms for typical operations
+- 99.9% uptime availability
+- Successful integration with existing Sage 50 installations
+- Zero data corruption incidents
+
+## Risk Mitigation
+
+1. **SDK Compatibility**: Test thoroughly with target Sage 50 versions
+2. **Performance**: Monitor resource usage and optimize container size
+3. **Data Safety**: Implement comprehensive backup strategy
+4. **Vendor Support**: Maintain relationship with Sage for SDK updates
+5. **Windows Licensing**: Ensure proper Windows Server licensing compliance
