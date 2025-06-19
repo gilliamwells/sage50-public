@@ -1,0 +1,88 @@
+Here’s a streamlined, casual plan to get the Sage 50 US SDK running in containerized GCP:
+
+☁️ 1. Set up your Windows container base
+Sage 50 SDK is COM-based and only works on Windows, so use a Windows Server container image.
+
+Pick the right OS version for compatibility (e.g. Server 2019/2022) and use Hyper‑V isolation for flexibility 
+stackoverflow.com
++8
+communityhub.sage.com
++8
+codat.io
++8
+learn.microsoft.com
+.
+
+Dockerfile sketch:
+
+dockerfile
+Copy
+Edit
+# choose e.g. Windows Server 2022 base image
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+# install prerequisites: .NET, Sage SDK, gcloud, etc.
+# set SDK path envs, copy your app
+ENTRYPOINT ["C:\\MySageApp\\run-sdk-app.bat"]
+🧩 2. Install Sage 50 SDK + dependencies
+In the container, side-load the Sage 50 SDK + runtime libraries (as per your in-house documentation).
+
+Ensure SDK DLLs are registered and COM accessible within the container.
+
+🚢 3. Container development & testing
+Build and run locally with Docker Desktop (Windows containers mode).
+
+Use your demo/testing app to verify SDK calls (open a quote, list items, etc.). If you're new, the C# “Sales Quotes” sample shows how to reference COM objects 
+learn.microsoft.com
++1
+developer.sage.com
++1
+stackoverflow.com
+.
+
+🚀 4. Deploy to Google Cloud
+Option A: Compute Engine VM
+Create a Windows VM (2019/2022), install Docker, deploy your container with gcloud compute instances create-with-container.
+
+Option B: GKE with Windows node pool
+Setup GKE cluster, add a Windows Server node pool.
+
+Deploy using standard Kubernetes manifests and specify Windows selectors 
+codelessplatforms.com
++4
+cloud.google.com
++4
+hub.docker.com
++4
+cdata.com
+.
+
+🛠 5. CI/CD & gcloud tooling
+Use Docker image google/cloud-sdk to build, tag, and push via Cloud Build or GitHub Actions 
+hub.docker.com
+.
+
+Automate deployment with gcloud CLI in a Cloud Build step.
+
+✅ 6. Monitoring and scaling
+Use GCP logging and monitoring for container metrics.
+
+For GKE, enable auto-upgrade and node scaling; for Compute Engine, use instance groups.
+
+🧪 7. Update & version management
+Each new Sage 50 version needs its own SDK libs; rebuild container.
+
+Tag images per version (e.g. sage-sdk:2024).
+
+Spin up parallel services for multiple SDK versions if needed.
+
+Quick recap:
+Step	Task
+1	Choose base Windows container (2019/2022 + Hyper‑V)
+2	Install & register Sage 50 SDK inside the container
+3	Test the SDK using a small application
+4	Deploy – either Compute Engine or GKE with Win nodes
+5	Build/publish with gcloud CLI, automate via Cloud Build
+6	Monitor runtime, enable scaling options
+7	Rebuild per SDK version, manage image tags
+
+Let me know if you want help with CI/CD setup, specific Dockerfile commands, or GKE YAML!
